@@ -330,6 +330,14 @@ STATUS_COLOR = {
     "debated": "#ffb300",
 }
 
+# Status badges for visual distinction in the dendrogram
+STATUS_BADGES = {
+    "attested": "●",
+    "reconstructed": "○",
+    "extinct": "✖",
+    "debated": "≈",
+}
+
 
 @st.cache_data
 def load_dataframe() -> pd.DataFrame:
@@ -403,7 +411,7 @@ max_depth = st.sidebar.slider(
     "📊 Profondeur de l'arbre",
     1,
     int(DF["level"].max() + 1),
-    int(DF["level"].max() + 1),
+    4,
     help="Contrôle le nombre de niveaux hiérarchiques affichés dans le dendrogramme"
 )
 status_options = list(STATUS_COLOR)
@@ -557,9 +565,11 @@ def render_dendrogram() -> None:
     )
     
     # Enhanced edge styling with gradient-like appearance
+    # Note: Gradient syntax (color1:color2) requires Graphviz >= 2.40
+    # Falls back to single color if not supported
     g.attr(
         "edge",
-        color="#4299e1:#667eea",  # Gradient from blue to purple
+        color="#4299e1:#667eea",  # Gradient from blue to purple (Graphviz 2.40+)
         penwidth="2.5",
         arrowsize="0.8",
     )
@@ -579,14 +589,8 @@ def render_dendrogram() -> None:
             border_color = lighten(base_color, factor=0.5)
             penwidth = "1.5"
         
-        # Status badges with Unicode symbols
-        badge_symbols = {
-            "attested": "●",
-            "reconstructed": "○",
-            "extinct": "✖",
-            "debated": "≈",
-        }
-        badge = badge_symbols.get(row.status, "")
+        # Get status badge from module constant
+        badge = STATUS_BADGES.get(row.status, "")
         
         # Build label with optional information
         label_parts = [f"{badge}  {row.text}"]

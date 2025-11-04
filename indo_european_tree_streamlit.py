@@ -1,8 +1,8 @@
 """Streamlit app for exploring the Indo-European language family.
 
-This module provides several interactive views (sunburst, icicle, treemap and
-Graphviz dendrogram) together with historian-friendly filters such as period
-range, attestation status and geographic spheres of influence.
+This module provides an interactive dendrogram visualization using Graphviz,
+together with historian-friendly filters such as period range, attestation
+status and geographic spheres of influence.
 """
 
 from __future__ import annotations
@@ -13,8 +13,6 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
 try:
@@ -26,9 +24,10 @@ except Exception:  # pragma: no cover - Graphviz optional
 
 
 st.set_page_config(
-    page_title="Indo-European Family • Interactive",
+    page_title="Indo-European Family Tree • Dendrogram",
     layout="wide",
-    page_icon="🌍",
+    page_icon="🌳",
+    initial_sidebar_state="expanded",
 )
 
 CURRENT_YEAR = _dt.date.today().year
@@ -398,48 +397,54 @@ def filter_by_time(df: pd.DataFrame, period: Tuple[int, int]) -> pd.Series:
 # ---------------------------------------------------------------------------
 # Sidebar controls
 # ---------------------------------------------------------------------------
-st.sidebar.header("Paramètres d'exploration")
-view = st.sidebar.radio(
-    "Vue principale",
-    ["Sunburst", "Icicle", "Treemap", "Dendrogramme"],
-    index=0,
-)
+st.sidebar.header("🌳 Paramètres d'exploration")
+st.sidebar.markdown("---")
 max_depth = st.sidebar.slider(
-    "Profondeur de l'arbre",
+    "📊 Profondeur de l'arbre",
     1,
     int(DF["level"].max() + 1),
-    3,
+    int(DF["level"].max() + 1),
+    help="Contrôle le nombre de niveaux hiérarchiques affichés dans le dendrogramme"
 )
 status_options = list(STATUS_COLOR)
 status_selection = st.sidebar.multiselect(
-    "Statuts historiques",
+    "🏛️ Statuts historiques",
     status_options,
     default=status_options,
+    help="Filtrer par statut d'attestation linguistique"
 )
 regions = sorted(DF["region"].unique())
 region_selection = st.sidebar.multiselect(
-    "Régions culturelles",
+    "🗺️ Régions culturelles",
     regions,
     default=regions,
+    help="Filtrer par zone géographique d'attestation"
 )
+st.sidebar.markdown("---")
 min_year, max_year = int(DF["period_start"].min()), int(DF["period_end"].max())
 time_range = st.sidebar.slider(
-    "Période représentée",
+    "📅 Période représentée",
     min_value=min_year,
     max_value=max_year,
     value=(min_year, max_year),
     step=50,
     format="%d",
+    help="Filtrer par période chronologique"
 )
+st.sidebar.markdown("---")
 query = st.sidebar.text_input(
-    "Recherche",
+    "🔍 Recherche",
     placeholder="ex. Gothic, Iran, Vulgar Latin…",
+    help="Recherche dans les noms, exemples et notes"
 )
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Affichage**")
 show_examples = st.sidebar.checkbox("Afficher les exemples", True)
-show_notes = st.sidebar.checkbox("Afficher les notes dans l'infobulle", False)
+show_notes = st.sidebar.checkbox("Afficher les périodes", True)
 
+st.sidebar.markdown("---")
 st.sidebar.caption(
-    "Les données chronologiques sont indicatives et expriment des fourchettes de mise en contact ou d'attestation."
+    "💡 Les données chronologiques sont indicatives et expriment des fourchettes de mise en contact ou d'attestation."
 )
 
 
@@ -515,139 +520,103 @@ opacity_map = {
 
 
 # ---------------------------------------------------------------------------
-# Helper visualisations
+# Enhanced Dendrogram Visualization
 # ---------------------------------------------------------------------------
-def make_hovertemplate() -> str:
-    lines = ["<b>%{customdata[0]}</b>"]
-    lines.append("Statut : %{customdata[1]}")
-    lines.append("Région : %{customdata[2]}")
-    lines.append("Période : %{customdata[3]}")
-    if show_examples:
-        lines.append("Exemples : %{customdata[4]}")
-    if show_notes:
-        lines.append("Notes : %{customdata[5]}")
-    return "<br>".join(lines)
-
-
-def render_plotly(kind: str) -> Optional[go.Figure]:
-    base = VISIBLE_DF.copy()
-    base["value"] = 1
-    custom = base[[
-        "label",
-        "status",
-        "region",
-        "period_label",
-        "examples",
-        "notes",
-    ]].to_numpy()
-
-    if kind == "Sunburst":
-        fig = px.sunburst(
-            base,
-            names="text",
-            parents="parent",
-            values="value",
-            color="status",
-            color_discrete_map=STATUS_COLOR,
-            branchvalues="total",
-            custom_data=custom,
-        )
-    elif kind == "Icicle":
-        fig = px.icicle(
-            base,
-            names="text",
-            parents="parent",
-            values="value",
-            color="status",
-            color_discrete_map=STATUS_COLOR,
-            branchvalues="total",
-            custom_data=custom,
-            tiling=dict(orientation="v"),
-        )
-    elif kind == "Treemap":
-        fig = px.treemap(
-            base,
-            names="text",
-            parents="parent",
-            values="value",
-            color="status",
-            color_discrete_map=STATUS_COLOR,
-            branchvalues="total",
-            custom_data=custom,
-        )
-    else:  # pragma: no cover - invalid kind routed elsewhere
-        return None
-
-    hovertemplate = make_hovertemplate()
-    fig.update_traces(
-        hovertemplate=hovertemplate,
-        selector=dict(type="sunburst"),
-        insidetextorientation="radial",
-        root_color="#0f172a",
-        marker=dict(line=dict(color="#0b1220", width=1)),
-    )
-    fig.update_traces(
-        hovertemplate=hovertemplate,
-        selector=dict(type="icicle"),
-        marker=dict(line=dict(color="#0b1220", width=1)),
-    )
-    fig.update_traces(
-        hovertemplate=hovertemplate,
-        selector=dict(type="treemap"),
-        marker=dict(line=dict(color="#0b1220", width=1)),
-    )
-    fig.update_layout(
-        margin=dict(l=0, r=0, t=30, b=0),
-        paper_bgcolor="#0b1220",
-        plot_bgcolor="#0b1220",
-        font=dict(size=14, color="#e5e7eb"),
-        hoverlabel=dict(bgcolor="#111827"),
-    )
-    return fig
-
-
-def render_graphviz() -> None:
+def render_dendrogram() -> None:
+    """Render an enhanced dendrogram visualization with improved aesthetics."""
     if not _HAS_GRAPHVIZ:
-        st.info("Graphviz n'est pas disponible dans cet environnement.")
+        st.error("⚠️ Graphviz n'est pas disponible dans cet environnement.")
+        st.info("Veuillez installer Graphviz pour afficher le dendrogramme.")
         return
 
-    g = Digraph("indo_european", format="svg")
-    g.attr(rankdir="LR", bgcolor="#0b1220")
+    # Create enhanced graph with better styling
+    g = Digraph("indo_european_tree", format="svg")
+    
+    # Graph-level attributes for better aesthetics
+    g.attr(
+        rankdir="LR",
+        bgcolor="#0a0e1a",
+        splines="ortho",  # Orthogonal edges for cleaner look
+        nodesep="0.6",
+        ranksep="1.2",
+        dpi="300",
+    )
+    
+    # Enhanced node styling with modern design
     g.attr(
         "node",
         shape="box",
         style="rounded,filled",
-        color="#1e293b",
-        fontcolor="#e2e8f0",
-        fillcolor="#111827",
-        penwidth="1.1",
-        fontsize="10",
+        color="#2d3748",
+        fontcolor="#f7fafc",
+        fillcolor="#1a202c",
+        penwidth="2",
+        fontsize="11",
+        fontname="Arial",
+        margin="0.3,0.15",
     )
-    g.attr("edge", color="#38bdf8", penwidth="1.0")
+    
+    # Enhanced edge styling with gradient-like appearance
+    g.attr(
+        "edge",
+        color="#4299e1:#667eea",  # Gradient from blue to purple
+        penwidth="2.5",
+        arrowsize="0.8",
+    )
 
     allowed = set(VISIBLE_DF["label"])
+    
+    # Render nodes with enhanced visual distinction
     for row in VISIBLE_DF.itertuples(index=False):
-        fill = lighten(
-            STATUS_COLOR[row.status],
-            factor=0.35 if row.visible else 0.7,
-        )
-        badge = {
+        # Calculate fill color with better visibility
+        base_color = STATUS_COLOR[row.status]
+        if row.visible:
+            fill = lighten(base_color, factor=0.25)
+            border_color = base_color
+            penwidth = "2.5"
+        else:
+            fill = lighten(base_color, factor=0.65)
+            border_color = lighten(base_color, factor=0.5)
+            penwidth = "1.5"
+        
+        # Status badges with Unicode symbols
+        badge_symbols = {
             "attested": "●",
             "reconstructed": "○",
             "extinct": "✖",
-            "debated": "~",
-        }.get(row.status, "")
-        note_line = f"\n{row.period_label}" if show_notes else ""
+            "debated": "≈",
+        }
+        badge = badge_symbols.get(row.status, "")
+        
+        # Build label with optional information
+        label_parts = [f"{badge}  {row.text}"]
+        if show_notes and row.period_label:
+            label_parts.append(f"📅 {row.period_label}")
+        
+        label_text = "\n".join(label_parts)
+        
+        # Add node with enhanced styling
         g.node(
             row.label,
-            f"{badge}  {row.text}{note_line}",
+            label_text,
             fillcolor=fill,
+            color=border_color,
+            penwidth=penwidth,
             style="rounded,filled",
+            fontcolor="#f7fafc" if row.visible else "#a0aec0",
         )
 
+    # Create edges with proper hierarchy
     for row in VISIBLE_DF.itertuples(index=False):
         if row.parent and row.parent in allowed:
-            g.edge(row.parent, row.label)
+            edge_color = "#4299e1:#667eea" if row.visible else "#4a5568"
+            edge_width = "2.5" if row.visible else "1.5"
+            g.edge(
+                row.parent,
+                row.label,
+                color=edge_color,
+                penwidth=edge_width,
+            )
 
     st.graphviz_chart(g, use_container_width=True)
 
@@ -655,51 +624,72 @@ def render_graphviz() -> None:
 # ---------------------------------------------------------------------------
 # Header and metrics
 # ---------------------------------------------------------------------------
-left_col, right_col = st.columns([0.7, 0.3])
-with left_col:
-    st.markdown(
-        """
-        # Indo-European Language Family
-        _Lecture interactive des branches, statuts et périodes d'attestation._
-        """
-    )
-with right_col:
-    st.markdown(
-        """
-        **Légende**  
-        ● attesté &nbsp;&nbsp; ○ reconstruit &nbsp;&nbsp; ✖ éteint &nbsp;&nbsp; ~ débattu
-        """
-    )
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric("Branches affichées", len(VISIBLE_DF))
-with col2:
-    st.metric("Attestées", int((VISIBLE_DF["status"] == "attested").sum()))
-with col3:
-    st.metric("Extinctes", int((VISIBLE_DF["status"] == "extinct").sum()))
-
-status_count = (
-    VISIBLE_DF.groupby("status")["label"].count().reindex(status_options).fillna(0).astype(int)
+st.markdown(
+    """
+    <div style='text-align: center; padding: 1rem 0;'>
+        <h1 style='color: #4299e1; font-size: 2.5rem; margin-bottom: 0.5rem;'>
+            🌳 Arbre Généalogique Indo-Européen
+        </h1>
+        <p style='color: #a0aec0; font-size: 1.1rem; font-style: italic;'>
+            Exploration interactive des branches linguistiques et de leur évolution historique
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True
 )
-st.bar_chart(status_count, height=160)
+
+st.markdown("---")
+
+# Legend in an expander for cleaner interface
+with st.expander("📖 Légende des symboles", expanded=False):
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.markdown("**● Attesté**  \nLangues avec sources écrites")
+    with col2:
+        st.markdown("**○ Reconstruit**  \nProto-langues reconstituées")
+    with col3:
+        st.markdown("**✖ Éteint**  \nLangues disparues")
+    with col4:
+        st.markdown("**≈ Débattu**  \nRegroupements hypothétiques")
+
+col1, col2, col3, col4 = st.columns(4)
+with col1:
+    st.metric("🌿 Branches affichées", len(VISIBLE_DF))
+with col2:
+    st.metric("● Attestées", int((VISIBLE_DF["status"] == "attested").sum()))
+with col3:
+    st.metric("✖ Éteintes", int((VISIBLE_DF["status"] == "extinct").sum()))
+with col4:
+    st.metric("○ Reconstruites", int((VISIBLE_DF["status"] == "reconstructed").sum()))
+
+st.markdown("---")
 
 
 # ---------------------------------------------------------------------------
-# Tabs for visualisation & data
+# Main dendrogram visualization
 # ---------------------------------------------------------------------------
-chart_tab, table_tab = st.tabs(["Visualisation", "Tableau & contexte"])
+st.markdown("### 🌳 Dendrogramme de la famille indo-européenne")
+st.markdown(
+    """
+    <p style='color: #a0aec0; margin-bottom: 1.5rem;'>
+    Visualisation hiérarchique des relations linguistiques entre les branches de la famille indo-européenne.
+    Les couleurs représentent les statuts d'attestation, et les liens montrent les relations de parenté.
+    </p>
+    """,
+    unsafe_allow_html=True
+)
 
-with chart_tab:
-    if view in {"Sunburst", "Icicle", "Treemap"}:
-        figure = render_plotly(view)
-        if figure:
-            st.plotly_chart(figure, use_container_width=True, config={"displayModeBar": False})
-    else:
-        render_graphviz()
+render_dendrogram()
+
+st.markdown("---")
+
+# ---------------------------------------------------------------------------
+# Data table and context
+# ---------------------------------------------------------------------------
+table_tab, context_tab = st.tabs(["📊 Tableau détaillé", "📚 Méthodologie"])
 
 with table_tab:
-    st.markdown("### Détails des branches sélectionnées")
+    st.markdown("### Détails des branches affichées")
     display_columns = [
         "label",
         "parent",
@@ -709,42 +699,84 @@ with table_tab:
         "examples",
         "notes",
     ]
+    
+    # Display styled dataframe
+    styled_df = VISIBLE_DF[display_columns].rename(
+        columns={
+            "label": "🌿 Branche",
+            "parent": "⬆️ Parent",
+            "status": "📋 Statut",
+            "region": "🗺️ Région",
+            "period_label": "📅 Chronologie",
+            "examples": "📝 Exemples",
+            "notes": "📖 Notes historiques",
+        }
+    )
+    
     st.dataframe(
-        VISIBLE_DF[display_columns].rename(
-            columns={
-                "label": "Branche",
-                "parent": "Parent",
-                "status": "Statut",
-                "region": "Région",
-                "period_label": "Chronologie",
-                "examples": "Exemples",
-                "notes": "Notes historiques",
-            }
-        ),
+        styled_df,
         hide_index=True,
         use_container_width=True,
+        height=400,
     )
 
-    download_csv = VISIBLE_DF[display_columns].to_csv(index=False)
-    st.download_button(
-        "Télécharger la sélection (CSV)",
-        download_csv,
-        file_name="indo_european_branches.csv",
-        mime="text/csv",
-    )
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        download_csv = VISIBLE_DF[display_columns].to_csv(index=False)
+        st.download_button(
+            "⬇️ Télécharger (CSV)",
+            download_csv,
+            file_name="indo_european_branches.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with col2:
+        st.caption(
+            f"💡 {len(VISIBLE_DF)} branches affichées • "
+            "Les notes synthétisent les apports principaux de chaque branche dans une perspective diachronique."
+        )
 
-    st.info(
-        "Les notes synthétisent les apports principaux de chaque branche dans une perspective diachronique."
-    )
-
-
-with st.expander("Crédits et méthodologie"):
-    st.markdown(
-        """
-        **Sources indicatives** : manuels d'introduction à la linguistique historique, atlas des langues
-        indo-européennes, corpus épigraphiques. Les périodes correspondent à des plages d'attestation
-        approximatives (premières traces écrites ou reconstitutions).  
-        **Bonnes pratiques** : possibilités de filtrer par époque ou par aire culturelle, survols enrichis
-        et téléchargement des données pour prolonger l'analyse.
-        """
-    )
+with context_tab:
+    st.markdown("### Crédits et méthodologie")
+    
+    st.markdown("""
+    #### 📚 Sources principales
+    
+    Les données présentées dans ce dendrogramme s'appuient sur les travaux de référence en linguistique 
+    historique indo-européenne :
+    
+    - **Manuels de référence** : Introduction à la linguistique historique comparative
+    - **Atlas linguistiques** : Atlas des langues indo-européennes et de leur distribution géographique
+    - **Corpus épigraphiques** : Collections de textes anciens et inscriptions
+    
+    #### ⏱️ Chronologie et datation
+    
+    Les périodes mentionnées correspondent à des **plages d'attestation approximatives** :
+    - Premières traces écrites documentées
+    - Reconstitutions linguistiques basées sur la méthode comparative
+    - Continuités vernaculaires pour les langues vivantes
+    
+    #### 🔍 Utilisation de l'outil
+    
+    Cette visualisation interactive permet de :
+    - **Filtrer** les branches par époque, région ou statut d'attestation
+    - **Explorer** les relations hiérarchiques entre les langues
+    - **Rechercher** des branches spécifiques via la barre de recherche
+    - **Télécharger** les données filtrées pour une analyse approfondie
+    
+    #### 📊 Interprétation des symboles
+    
+    - **● Attesté** : Langues documentées par des sources écrites directes
+    - **○ Reconstruit** : Proto-langues déduites par la méthode comparative
+    - **✖ Éteint** : Langues qui ne sont plus parlées
+    - **≈ Débattu** : Regroupements dont la validité fait débat dans la communauté scientifique
+    
+    #### ⚠️ Note importante
+    
+    Les regroupements linguistiques présentés reflètent l'état actuel des connaissances et peuvent varier 
+    selon les écoles de pensée. Les hypothèses de parenté linguistique, notamment pour les branches les 
+    plus anciennes, restent sujettes à révision à mesure que de nouvelles données deviennent disponibles.
+    """)
+    
+    st.markdown("---")
+    st.caption("Visualisation créée avec Streamlit et Graphviz • Données compilées à partir de sources académiques")
